@@ -17,7 +17,7 @@ export default function InputBar({ onSend, disabled }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex gap-2 p-4 border-t border-surface-lighter">
+    <form onSubmit={handleSubmit} className="flex gap-2">
       <input
         type="text"
         value={text}

@@ -2,42 +2,67 @@ import { useState, useCallback } from "react";
 import type { ChatMessage } from "./lib/types";
 import { resetAll } from "./lib/api";
 import { useHardwareState } from "./hooks/useHardwareState";
+import { useFlirty } from "./hooks/useFlirty";
 import ChatArea from "./components/ChatArea";
 import InputBar from "./components/InputBar";
 import HardwarePanel from "./components/HardwarePanel";
 import ResetButton from "./components/ResetButton";
+import MicButton from "./components/MicButton";
+import VoiceVisualizer from "./components/VoiceVisualizer";
 
 export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const { state: hwState, refresh: refreshHw } = useHardwareState();
 
-  const addMessage = useCallback((role: "user" | "assistant", content: string) => {
-    setMessages((prev) => [
-      ...prev,
-      { id: crypto.randomUUID(), role, content, timestamp: Date.now() },
-    ]);
+  const addMessage = useCallback((msg: ChatMessage) => {
+    setMessages((prev) => [...prev, msg]);
   }, []);
+
+  const flirty = useFlirty({ onMessage: addMessage });
 
   const handleSend = useCallback(
     (text: string) => {
-      addMessage("user", text);
-      // AI response will be wired in step 5
+      if (flirty.status === "connected") {
+        flirty.sendText(text);
+      } else {
+        // Local echo when not connected
+        setMessages((prev) => [
+          ...prev,
+          { id: crypto.randomUUID(), role: "user", content: text, timestamp: Date.now() },
+        ]);
+      }
     },
-    [addMessage]
+    [flirty]
   );
 
   const handleReset = useCallback(async () => {
+    if (flirty.status === "connected") {
+      await flirty.disconnect();
+    }
     await resetAll();
     setMessages([]);
     refreshHw();
-  }, [refreshHw]);
+  }, [flirty, refreshHw]);
 
   return (
     <div className="h-screen bg-surface flex flex-col">
       {/* Header */}
       <header className="flex items-center justify-between px-4 py-3 border-b border-surface-lighter">
-        <h1 className="text-lg font-light tracking-wide text-accent">Flirty</h1>
-        <ResetButton onReset={handleReset} />
+        <div className="flex items-center gap-3">
+          <h1 className="text-lg font-light tracking-wide text-accent">Flirty</h1>
+          {flirty.status === "connected" && (
+            <VoiceVisualizer
+              getVolume={flirty.getOutputVolume}
+              active={flirty.isSpeaking}
+            />
+          )}
+          {flirty.status === "connecting" && (
+            <span className="text-xs text-gray-500">connecting...</span>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          <ResetButton onReset={handleReset} />
+        </div>
       </header>
 
       {/* Hardware status bar */}
@@ -46,8 +71,20 @@ export default function App() {
       {/* Chat messages */}
       <ChatArea messages={messages} />
 
-      {/* Input */}
-      <InputBar onSend={handleSend} />
+      {/* Input area */}
+      <div className="flex items-center gap-3 p-4 border-t border-surface-lighter">
+        <div className="flex-1">
+          <InputBar onSend={handleSend} disabled={false} />
+        </div>
+        <MicButton
+          isConnected={flirty.status === "connected"}
+          isMuted={flirty.isMuted}
+          isSpeaking={flirty.isSpeaking}
+          onConnect={flirty.connect}
+          onDisconnect={flirty.disconnect}
+          onToggleMute={() => flirty.setMuted(!flirty.isMuted)}
+        />
+      </div>
     </div>
   );
 }
