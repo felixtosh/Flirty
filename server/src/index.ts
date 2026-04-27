@@ -5,6 +5,8 @@ import cors from "cors";
 import { createHardwareManager } from "./hardware/index.js";
 import { hardwareRoutes } from "./routes/hardware.js";
 import { resetRoutes } from "./routes/reset.js";
+import { signedUrlRoutes } from "./routes/signed-url.js";
+import { chatRoutes } from "./routes/chat.js";
 import { setupWebSocket } from "./ws.js";
 
 const app = express();
@@ -22,6 +24,8 @@ app.get("/api/health", (_req, res) => {
 
 app.use("/api/hardware", hardwareRoutes(hw));
 app.use("/api/reset", resetRoutes(hw));
+app.use("/api/signed-url", signedUrlRoutes());
+app.use("/api/chat", chatRoutes());
 
 setupWebSocket(server, hw);
 
