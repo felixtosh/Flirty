@@ -1,5 +1,5 @@
-import { useState, useCallback } from "react";
-import type { ChatMessage } from "./lib/types";
+import { useState, useCallback, useEffect } from "react";
+import type { ChatMessage, InputMode, OutputMode } from "./lib/types";
 import { resetAll } from "./lib/api";
 import { useHardwareState } from "./hooks/useHardwareState";
 import { useFlirty } from "./hooks/useFlirty";
@@ -8,10 +8,13 @@ import InputBar from "./components/InputBar";
 import HardwarePanel from "./components/HardwarePanel";
 import ResetButton from "./components/ResetButton";
 import MicButton from "./components/MicButton";
+import ModeToggles from "./components/ModeToggles";
 import VoiceVisualizer from "./components/VoiceVisualizer";
 
 export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [inputMode, setInputMode] = useState<InputMode>("voice");
+  const [outputMode, setOutputMode] = useState<OutputMode>("voice");
   const { state: hwState, refresh: refreshHw } = useHardwareState();
 
   const addMessage = useCallback((msg: ChatMessage) => {
@@ -20,12 +23,25 @@ export default function App() {
 
   const flirty = useFlirty({ onMessage: addMessage });
 
+  // Mute mic when input mode is text
+  useEffect(() => {
+    if (flirty.status === "connected") {
+      flirty.setMuted(inputMode === "text");
+    }
+  }, [inputMode, flirty]);
+
+  // Mute output audio when output mode is text
+  useEffect(() => {
+    if (flirty.status === "connected") {
+      flirty.setVolume(outputMode === "text" ? 0 : 1);
+    }
+  }, [outputMode, flirty]);
+
   const handleSend = useCallback(
     (text: string) => {
       if (flirty.status === "connected") {
         flirty.sendText(text);
       } else {
-        // Local echo when not connected
         setMessages((prev) => [
           ...prev,
           { id: crypto.randomUUID(), role: "user", content: text, timestamp: Date.now() },
@@ -43,6 +59,9 @@ export default function App() {
     setMessages([]);
     refreshHw();
   }, [flirty, refreshHw]);
+
+  const showTextInput = inputMode === "text" || flirty.status !== "connected";
+  const showMicButton = inputMode === "voice" || flirty.status !== "connected";
 
   return (
     <div className="h-screen bg-surface flex flex-col">
@@ -65,7 +84,13 @@ export default function App() {
         </div>
       </header>
 
-      {/* Hardware status bar */}
+      {/* Mode toggles + Hardware status */}
+      <ModeToggles
+        inputMode={inputMode}
+        outputMode={outputMode}
+        onInputModeChange={setInputMode}
+        onOutputModeChange={setOutputMode}
+      />
       <HardwarePanel state={hwState} />
 
       {/* Chat messages */}
@@ -73,17 +98,21 @@ export default function App() {
 
       {/* Input area */}
       <div className="flex items-center gap-3 p-4 border-t border-surface-lighter">
-        <div className="flex-1">
-          <InputBar onSend={handleSend} disabled={false} />
-        </div>
-        <MicButton
-          isConnected={flirty.status === "connected"}
-          isMuted={flirty.isMuted}
-          isSpeaking={flirty.isSpeaking}
-          onConnect={flirty.connect}
-          onDisconnect={flirty.disconnect}
-          onToggleMute={() => flirty.setMuted(!flirty.isMuted)}
-        />
+        {showTextInput && (
+          <div className="flex-1">
+            <InputBar onSend={handleSend} disabled={false} />
+          </div>
+        )}
+        {showMicButton && (
+          <MicButton
+            isConnected={flirty.status === "connected"}
+            isMuted={flirty.isMuted}
+            isSpeaking={flirty.isSpeaking}
+            onConnect={flirty.connect}
+            onDisconnect={flirty.disconnect}
+            onToggleMute={() => flirty.setMuted(!flirty.isMuted)}
+          />
+        )}
       </div>
     </div>
   );

@@ -66,6 +66,7 @@ export function useFlirty({ onMessage }: UseFlirtyOptions) {
     mode: conversation.mode,
     isMuted: conversation.isMuted,
     setMuted: conversation.setMuted,
+    setVolume: (vol: number) => conversation.setVolume({ volume: vol }),
     getInputVolume: conversation.getInputVolume,
     getOutputVolume: conversation.getOutputVolume,
   };
