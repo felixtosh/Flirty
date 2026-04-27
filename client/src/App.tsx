@@ -74,11 +74,11 @@ export default function App() {
   const showMicButton = inputMode === "voice" || flirty.status !== "connected";
 
   return (
-    <div className="h-screen bg-surface flex flex-col">
+    <div className="h-screen bg-surface flex flex-col max-w-2xl mx-auto w-full">
       {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 border-b border-surface-lighter">
+      <header className="flex items-center justify-between px-4 py-3 border-b border-surface-lighter/50">
         <div className="flex items-center gap-3">
-          <h1 className="text-lg font-light tracking-wide text-accent">Flirty</h1>
+          <h1 className="text-lg font-light tracking-widest text-accent uppercase">Flirty</h1>
           {flirty.status === "connected" && (
             <VoiceVisualizer
               getVolume={flirty.getOutputVolume}
@@ -86,7 +86,7 @@ export default function App() {
             />
           )}
           {flirty.status === "connecting" && (
-            <span className="text-xs text-gray-500">connecting...</span>
+            <span className="text-xs text-gray-500 animate-pulse">connecting...</span>
           )}
         </div>
         <div className="flex items-center gap-3">
@@ -107,7 +107,11 @@ export default function App() {
       <ChatArea messages={messages} />
 
       {/* Input area */}
-      <div className="flex items-center gap-3 p-4 border-t border-surface-lighter">
+      <div
+        className={`flex items-center gap-3 p-4 border-t border-surface-lighter/50 ${
+          !showTextInput ? "justify-center" : ""
+        }`}
+      >
         {showTextInput && (
           <div className="flex-1">
             <InputBar onSend={handleSend} disabled={false} />

@@ -19,7 +19,7 @@ export default function MicButton({
     return (
       <button
         onClick={onConnect}
-        className="w-14 h-14 rounded-full bg-accent/20 text-accent hover:bg-accent/30 flex items-center justify-center transition-colors"
+        className="w-14 h-14 rounded-full bg-accent/20 text-accent hover:bg-accent/30 hover:glow-accent flex items-center justify-center transition-all"
         title="Start voice conversation"
       >
         <MicIcon />
@@ -31,11 +31,11 @@ export default function MicButton({
     <div className="flex items-center gap-2">
       <button
         onClick={onToggleMute}
-        className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors ${
+        className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${
           isMuted
             ? "bg-red-500/20 text-red-400"
             : isSpeaking
-              ? "bg-green-500/20 text-green-400 animate-pulse"
+              ? "bg-accent/20 text-accent glow-accent animate-pulse"
               : "bg-accent/20 text-accent"
         }`}
         title={isMuted ? "Unmute" : "Mute"}

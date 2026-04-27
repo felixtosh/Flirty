@@ -14,10 +14,15 @@ export default function ChatArea({ messages }: Props) {
   }, [messages]);
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-6">
+    <div className="flex-1 overflow-y-auto px-4 py-6 scroll-smooth">
       {messages.length === 0 && (
-        <div className="flex items-center justify-center h-full text-gray-600 text-sm">
-          Start a conversation...
+        <div className="flex flex-col items-center justify-center h-full gap-4 animate-message-in">
+          <div className="text-5xl opacity-30">
+            {"\u{1F525}"}
+          </div>
+          <p className="text-gray-600 text-sm font-light tracking-wide">
+            Tap the mic to start...
+          </p>
         </div>
       )}
       {messages.map((msg) => (
