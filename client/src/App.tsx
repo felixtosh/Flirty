@@ -15,13 +15,23 @@ export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMode, setInputMode] = useState<InputMode>("voice");
   const [outputMode, setOutputMode] = useState<OutputMode>("voice");
-  const { state: hwState, refresh: refreshHw } = useHardwareState();
+  const { state: hwState, refresh: refreshHw, onReset: onExternalReset } = useHardwareState();
 
   const addMessage = useCallback((msg: ChatMessage) => {
     setMessages((prev) => [...prev, msg]);
   }, []);
 
   const flirty = useFlirty({ onMessage: addMessage });
+
+  // Handle external reset (e.g. from curl POST /api/reset)
+  useEffect(() => {
+    onExternalReset(async () => {
+      if (flirty.status === "connected") {
+        await flirty.disconnect();
+      }
+      setMessages([]);
+    });
+  }, [flirty, onExternalReset]);
 
   // Mute mic when input mode is text
   useEffect(() => {

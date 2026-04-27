@@ -1,10 +1,12 @@
 import { HardwareDriver, DeviceState } from "./types.js";
 
 type StateListener = (state: DeviceState) => void;
+type ResetListener = (state: DeviceState) => void;
 
 export class HardwareManager {
   private driver: HardwareDriver;
-  private listeners: Set<StateListener> = new Set();
+  private stateListeners: Set<StateListener> = new Set();
+  private resetListeners: Set<ResetListener> = new Set();
 
   constructor(driver: HardwareDriver) {
     this.driver = driver;
@@ -17,24 +19,35 @@ export class HardwareManager {
   async execute(action: string, params: Record<string, unknown>): Promise<DeviceState> {
     await this.driver.execute(action, params);
     const state = await this.driver.getState();
-    this.broadcast(state);
+    this.broadcastState(state);
     return state;
   }
 
   async reset(): Promise<DeviceState> {
     await this.driver.reset();
     const state = await this.driver.getState();
-    this.broadcast(state, true);
+    this.broadcastReset(state);
     return state;
   }
 
   onStateChange(listener: StateListener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+    this.stateListeners.add(listener);
+    return () => this.stateListeners.delete(listener);
   }
 
-  private broadcast(state: DeviceState, isReset = false) {
-    for (const listener of this.listeners) {
+  onReset(listener: ResetListener): () => void {
+    this.resetListeners.add(listener);
+    return () => this.resetListeners.delete(listener);
+  }
+
+  private broadcastState(state: DeviceState) {
+    for (const listener of this.stateListeners) {
+      listener(state);
+    }
+  }
+
+  private broadcastReset(state: DeviceState) {
+    for (const listener of this.resetListeners) {
       listener(state);
     }
   }
