@@ -1,8 +1,8 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&display=swap');
 
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -70,4 +70,28 @@ body {
 
 .animate-candle {
   animation: candleFlicker 2s ease-in-out infinite;
+}
+
+/* Presentation mode gradient shift */
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  25% { background-position: 100% 0%; }
+  50% { background-position: 100% 50%; }
+  75% { background-position: 0% 100%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animate-gradient-shift {
+  animation: gradientShift 20s ease-in-out infinite;
+}
+
+/* Floating emphasis words */
+@keyframes wordFloat {
+  0% { opacity: 0; transform: translateY(10px) scale(0.95); }
+  10% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-10px) scale(1.03); }
+}
+
+.animate-word-float {
+  animation: wordFloat 5s ease-in-out both;
 }

@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useConversation } from "@elevenlabs/react";
 import { getSignedUrl } from "../lib/api";
 import { clientTools } from "../lib/clientTools";
@@ -10,6 +10,8 @@ interface UseFlirtyOptions {
 
 export function useFlirty({ onMessage }: UseFlirtyOptions) {
   const msgIdRef = useRef(0);
+  const [isTextSession, setIsTextSession] = useState(false);
+  const lastAiMsgRef = useRef<string>("");
 
   const makeMsg = useCallback(
     (role: "user" | "assistant", content: string): ChatMessage => ({
@@ -25,27 +27,44 @@ export function useFlirty({ onMessage }: UseFlirtyOptions) {
     clientTools,
     onMessage: (payload) => {
       if (payload.source === "ai") {
+        // Deduplicate identical consecutive AI messages
+        if (payload.message === lastAiMsgRef.current) return;
+        lastAiMsgRef.current = payload.message;
         onMessage(makeMsg("assistant", payload.message));
       } else if (payload.source === "user") {
+        // Show transcribed voice input
         onMessage(makeMsg("user", payload.message));
       }
     },
     onError: (message, context) => {
       console.error("ElevenLabs error:", message, context);
     },
+    onDisconnect: () => {
+      setIsTextSession(false);
+    },
   });
 
-  const connect = useCallback(async () => {
+  const connect = useCallback(async (options?: { textOnly?: boolean }) => {
     try {
+      const textOnly = options?.textOnly ?? false;
+      setIsTextSession(textOnly);
       const signedUrl = await getSignedUrl();
-      await conversation.startSession({ signedUrl });
+      await conversation.startSession({
+        signedUrl,
+        overrides: textOnly
+          ? { conversation: { textOnly: true } }
+          : undefined,
+      });
     } catch (err) {
+      setIsTextSession(false);
       console.error("Failed to connect:", err);
     }
   }, [conversation]);
 
   const disconnect = useCallback(async () => {
     await conversation.endSession();
+    setIsTextSession(false);
+    lastAiMsgRef.current = "";
   }, [conversation]);
 
   const sendText = useCallback(
@@ -61,12 +80,17 @@ export function useFlirty({ onMessage }: UseFlirtyOptions) {
     connect,
     disconnect,
     sendText,
+    isTextSession,
     status: conversation.status,
     isSpeaking: conversation.isSpeaking,
     mode: conversation.mode,
     isMuted: conversation.isMuted,
-    setMuted: conversation.setMuted,
-    setVolume: (vol: number) => conversation.setVolume({ volume: vol }),
+    setMuted: (muted: boolean) => {
+      try { conversation.setMuted(muted); } catch {}
+    },
+    setVolume: (vol: number) => {
+      try { conversation.setVolume({ volume: vol }); } catch {}
+    },
     getInputVolume: conversation.getInputVolume,
     getOutputVolume: conversation.getOutputVolume,
   };

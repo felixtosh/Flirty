@@ -6,18 +6,19 @@
  * Reads prompt files from prompts/, creates an agent with client tools,
  * and prints the agent ID to add to .env.
  */
-import "dotenv/config";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const API_BASE = "https://api.elevenlabs.io/v1";
-const API_KEY = process.env.ELEVENLABS_API_KEY;
 
-if (!API_KEY) {
-  console.error("ELEVENLABS_API_KEY not set in .env");
-  process.exit(1);
+function getApiKey(): string {
+  const key = process.env.ELEVENLABS_API_KEY;
+  if (!key) {
+    throw new Error("ELEVENLABS_API_KEY not set in .env");
+  }
+  return key;
 }
 
 function loadPrompts(): string {
@@ -38,6 +39,7 @@ const clientToolDefinitions = [
     name: "light_candles",
     description:
       "Toggle the real candles in the room on or off. Use this to create a warm, intimate atmosphere.",
+    expects_response: true,
     parameters: {
       type: "object" as const,
       required: ["lit"],
@@ -54,6 +56,7 @@ const clientToolDefinitions = [
     name: "play_music",
     description:
       "Control the room's music system. Play romantic music to set the mood, pause it, or skip to the next track.",
+    expects_response: true,
     parameters: {
       type: "object" as const,
       required: ["action"],
@@ -76,6 +79,7 @@ const clientToolDefinitions = [
     name: "change_color",
     description:
       "Change the ambient lighting color in the room. Use warm colors for intimacy, cool colors for mystery.",
+    expects_response: true,
     parameters: {
       type: "object" as const,
       required: ["color"],
@@ -93,11 +97,26 @@ const clientToolDefinitions = [
 async function fetchVoices(): Promise<
   { voice_id: string; name: string }[]
 > {
-  const res = await fetch(`${API_BASE}/voices`, {
-    headers: { "xi-api-key": API_KEY! },
+  // Try v2 endpoint first for broader voice listing
+  const res = await fetch(`${API_BASE}/voices?show_legacy=true`, {
+    headers: { "xi-api-key": getApiKey() },
   });
   const data = await res.json();
-  return data.voices ?? [];
+  const voices = data.voices ?? [];
+
+  if (voices.length > 0) return voices;
+
+  // Fallback: search shared voice library for deep male voices
+  console.log("No voices in personal library, searching shared library...");
+  const sharedRes = await fetch(
+    `${API_BASE}/shared-voices?gender=male&use_cases=conversational&sort=usage_character_count_7d&page_size=20`,
+    { headers: { "xi-api-key": getApiKey() } }
+  );
+  const sharedData = await sharedRes.json();
+  return (sharedData.voices ?? []).map((v: any) => ({
+    voice_id: v.voice_id,
+    name: v.name,
+  }));
 }
 
 async function createAgent(systemPrompt: string, voiceId: string) {
@@ -107,16 +126,17 @@ async function createAgent(systemPrompt: string, voiceId: string) {
       agent: {
         prompt: {
           prompt: systemPrompt,
+          tools: clientToolDefinitions,
         },
-        first_message: "Well... hello there.",
+        first_message: "[sighs] Well... hello there. Come a little closer... won't you?",
         language: "en",
-        tools: clientToolDefinitions,
       },
       tts: {
         voice_id: voiceId,
-        model_id: "eleven_flash_v2",
-        stability: 0.4,
-        similarity_boost: 0.8,
+        model_id: "eleven_v3",
+        stability: 0.7,
+        similarity_boost: 0.85,
+        speed: 0.9,
       },
     },
   };
@@ -124,7 +144,7 @@ async function createAgent(systemPrompt: string, voiceId: string) {
   const res = await fetch(`${API_BASE}/convai/agents/create`, {
     method: "POST",
     headers: {
-      "xi-api-key": API_KEY!,
+      "xi-api-key": getApiKey(),
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
@@ -132,8 +152,7 @@ async function createAgent(systemPrompt: string, voiceId: string) {
 
   if (!res.ok) {
     const text = await res.text();
-    console.error(`Failed to create agent (${res.status}):`, text);
-    process.exit(1);
+    throw new Error(`Failed to create agent (${res.status}): ${text}`);
   }
 
   return res.json();
@@ -150,16 +169,17 @@ async function updateAgent(
       agent: {
         prompt: {
           prompt: systemPrompt,
+          tools: clientToolDefinitions,
         },
-        first_message: "Well... hello there.",
+        first_message: "[sighs] Well... hello there. Come a little closer... won't you?",
         language: "en",
-        tools: clientToolDefinitions,
       },
       tts: {
         voice_id: voiceId,
-        model_id: "eleven_flash_v2",
-        stability: 0.4,
-        similarity_boost: 0.8,
+        model_id: "eleven_v3",
+        stability: 0.7,
+        similarity_boost: 0.85,
+        speed: 0.9,
       },
     },
   };
@@ -167,7 +187,7 @@ async function updateAgent(
   const res = await fetch(`${API_BASE}/convai/agents/${agentId}`, {
     method: "PATCH",
     headers: {
-      "xi-api-key": API_KEY!,
+      "xi-api-key": getApiKey(),
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
@@ -175,42 +195,103 @@ async function updateAgent(
 
   if (!res.ok) {
     const text = await res.text();
-    console.error(`Failed to update agent (${res.status}):`, text);
-    process.exit(1);
+    throw new Error(`Failed to update agent (${res.status}): ${text}`);
   }
 
   return res.json();
 }
 
-async function main() {
-  const systemPrompt = loadPrompts();
-  console.log(`Loaded system prompt (${systemPrompt.length} chars)`);
+async function ensureVoiceInLibrary(voiceId: string) {
+  // Check if the voice is already in the user's library
+  const res = await fetch(`${API_BASE}/voices/${voiceId}`, {
+    headers: { "xi-api-key": getApiKey() },
+  });
+  if (res.ok) return; // Already in library
 
-  // Find a deep male voice
-  const voices = await fetchVoices();
-  const preferred = ["Adam", "Antoni", "AZ", "Bob"];
-  const voice = preferred
-    .map((name) => voices.find((v) => v.name === name))
-    .find(Boolean);
-
-  if (!voice) {
-    console.error("No suitable voice found. Available:", voices.map((v) => v.name).join(", "));
-    process.exit(1);
+  // Search shared library and add if found
+  const searchRes = await fetch(
+    `${API_BASE}/shared-voices?search=${voiceId}&page_size=1`,
+    { headers: { "xi-api-key": getApiKey() } }
+  );
+  const data = await searchRes.json();
+  const shared = data.voices?.[0];
+  if (!shared) {
+    console.warn(`[agent] Voice ${voiceId} not found in shared library either`);
+    return;
   }
-  console.log(`Using voice: ${voice.name} (${voice.voice_id})`);
 
-  const existingId = process.env.ELEVENLABS_AGENT_ID;
-  if (existingId) {
-    console.log(`Updating existing agent ${existingId}...`);
-    await updateAgent(existingId, systemPrompt, voice.voice_id);
-    console.log(`Agent updated: ${existingId}`);
+  console.log(`[agent] Adding shared voice "${shared.name}" to library...`);
+  const addRes = await fetch(
+    `${API_BASE}/voices/add/${shared.public_owner_id}/${voiceId}`,
+    {
+      method: "POST",
+      headers: {
+        "xi-api-key": getApiKey(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ new_name: shared.name }),
+    }
+  );
+  if (addRes.ok) {
+    console.log(`[agent] Voice "${shared.name}" added to library`);
   } else {
-    console.log("Creating new agent...");
-    const result = await createAgent(systemPrompt, voice.voice_id);
-    const agentId = result.agent_id;
-    console.log(`\nAgent created: ${agentId}`);
-    console.log(`\nAdd to .env:\nELEVENLABS_AGENT_ID=${agentId}`);
+    const text = await addRes.text();
+    console.warn(`[agent] Failed to add voice: ${text}`);
   }
 }
 
-main().catch(console.error);
+export async function syncAgent() {
+  const systemPrompt = loadPrompts();
+  console.log(`[agent] Loaded system prompt (${systemPrompt.length} chars)`);
+
+  // Resolve voice ID: prefer explicit env var, otherwise search library
+  let voiceId = process.env.ELEVENLABS_VOICE_ID;
+  if (voiceId) {
+    console.log(`[agent] Using voice from env: ${voiceId}`);
+    await ensureVoiceInLibrary(voiceId);
+  } else {
+    const voices = await fetchVoices();
+    console.log(`[agent] Found ${voices.length} voices`);
+
+    const preferred = ["Adam", "Antoni", "AZ", "Bob", "Chris", "Daniel", "Dave", "Fin", "George"];
+    let voice = preferred
+      .map((name) => voices.find((v) => v.name === name))
+      .find(Boolean);
+
+    if (!voice && voices.length > 0) {
+      voice = voices[0];
+      console.log(`[agent] Preferred voices not found, falling back to: ${voice.name}`);
+    }
+
+    if (!voice) {
+      throw new Error("No voices available. Set ELEVENLABS_VOICE_ID in .env or check API key permissions.");
+    }
+
+    voiceId = voice.voice_id;
+    console.log(`[agent] Using voice: ${voice.name} (${voiceId})`);
+  }
+
+  const existingId = process.env.ELEVENLABS_AGENT_ID;
+  if (existingId) {
+    console.log(`[agent] Updating agent ${existingId}...`);
+    await updateAgent(existingId, systemPrompt, voiceId);
+    console.log(`[agent] Agent synced`);
+  } else {
+    console.log("[agent] Creating new agent...");
+    const result = await createAgent(systemPrompt, voiceId);
+    const agentId = result.agent_id;
+    console.log(`[agent] Agent created: ${agentId}`);
+    console.log(`[agent] Add to .env:\nELEVENLABS_AGENT_ID=${agentId}`);
+  }
+}
+
+// Allow running as standalone script
+const isMainModule = process.argv[1]?.endsWith("setup-agent.ts") || process.argv[1]?.endsWith("setup-agent.js");
+if (isMainModule) {
+  const dotenv = await import("dotenv");
+  dotenv.config({ path: path.resolve(__dirname, "../../.env") });
+  syncAgent().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

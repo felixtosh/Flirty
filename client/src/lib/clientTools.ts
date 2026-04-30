@@ -1,4 +1,10 @@
 import { hardwareAction } from "./api";
+import { musicPlayer } from "./musicPlayer";
+
+// When all tracks finish, sync server state so AI knows music stopped
+musicPlayer.onStop(() => {
+  hardwareAction("music", "pause").catch(() => {});
+});
 
 export const clientTools = {
   light_candles: async (params: { lit: boolean }) => {
@@ -7,6 +13,9 @@ export const clientTools = {
     return params.lit ? "Candles are now lit" : "Candles extinguished";
   },
   play_music: async (params: { action: "play" | "pause" | "next"; genre?: string }) => {
+    if (params.action === "play") musicPlayer.play();
+    else if (params.action === "pause") musicPlayer.pause();
+    else if (params.action === "next") musicPlayer.next();
     await hardwareAction("music", params.action, { genre: params.genre });
     if (params.action === "play") return `Music playing${params.genre ? ` (${params.genre})` : ""}`;
     if (params.action === "pause") return "Music paused";

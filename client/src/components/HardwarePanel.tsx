@@ -2,9 +2,10 @@ import type { DeviceState } from "../lib/types";
 
 interface Props {
   state: DeviceState | null;
+  emphasisWords?: string[];
 }
 
-export default function HardwarePanel({ state }: Props) {
+export default function HardwarePanel({ state, emphasisWords }: Props) {
   if (!state) return null;
 
   return (
@@ -39,6 +40,13 @@ export default function HardwarePanel({ state }: Props) {
         />
         <span className="text-gray-500">{state.color.current}</span>
       </span>
+
+      {emphasisWords && emphasisWords.length > 0 && (
+        <span className="flex items-center gap-1.5 text-accent/60 italic animate-ambient-pulse">
+          <span className="text-base">✦</span>
+          {emphasisWords.join(" · ")}
+        </span>
+      )}
     </div>
   );
 }

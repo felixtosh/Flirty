@@ -1,31 +1,75 @@
-import { useState, useCallback, useEffect } from "react";
-import type { ChatMessage, InputMode, OutputMode } from "./lib/types";
-import { resetAll } from "./lib/api";
+import { useState, useCallback, useEffect, useRef } from "react";
+import type { ChatMessage, FloatingWord, InputMode, OutputMode } from "./lib/types";
 import { useHardwareState } from "./hooks/useHardwareState";
 import { useFlirty } from "./hooks/useFlirty";
+import { extractEmphasisWords } from "./lib/emphasisWords";
+import { musicPlayer } from "./lib/musicPlayer";
 import ChatArea from "./components/ChatArea";
 import InputBar from "./components/InputBar";
 import HardwarePanel from "./components/HardwarePanel";
-import ResetButton from "./components/ResetButton";
 import MicButton from "./components/MicButton";
 import ModeToggles from "./components/ModeToggles";
-import VoiceVisualizer from "./components/VoiceVisualizer";
+import Footer from "./components/Footer";
+import PresentationView from "./components/PresentationView";
+import FloatingWords from "./components/FloatingWords";
+
+const FLOATING_WORD_LIFETIME = 5000;
 
 export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMode, setInputMode] = useState<InputMode>("voice");
   const [outputMode, setOutputMode] = useState<OutputMode>("voice");
-  const { state: hwState, refresh: refreshHw, onReset: onExternalReset } = useHardwareState();
+  const [appMode, setAppMode] = useState<"config" | "presentation">("config");
+  const [floatingWords, setFloatingWords] = useState<FloatingWord[]>([]);
+  const [latestEmphasis, setLatestEmphasis] = useState<string[]>([]);
+  const { state: hwState, onReset: onExternalReset } = useHardwareState();
+  const wordIdRef = useRef(0);
 
-  const addMessage = useCallback((msg: ChatMessage) => {
-    setMessages((prev) => [...prev, msg]);
+  const applyEmphasis = useCallback((words: string[]) => {
+    if (words.length === 0) return;
+    setLatestEmphasis(words);
+
+    // Add floating words with random positions
+    const newWords: FloatingWord[] = words.map((text, i) => ({
+      id: String(++wordIdRef.current),
+      text,
+      x: 10 + Math.random() * 80,
+      y: 15 + Math.random() * 70,
+      delay: i * 400,
+      createdAt: Date.now(),
+    }));
+    setFloatingWords((prev) => [...prev, ...newWords]);
   }, []);
 
+  const addMessage = useCallback((msg: ChatMessage) => {
+    if (msg.role === "assistant") {
+      const words = extractEmphasisWords(msg.content);
+      msg = { ...msg, emphasisWords: words.length > 0 ? words : undefined };
+      applyEmphasis(words);
+    }
+    setMessages((prev) => [...prev, msg]);
+  }, [applyEmphasis]);
+
   const flirty = useFlirty({ onMessage: addMessage });
+
+  // Clean up expired floating words
+  useEffect(() => {
+    if (floatingWords.length === 0) return;
+    const timer = setInterval(() => {
+      const now = Date.now();
+      setFloatingWords((prev) =>
+        prev.filter((w) => now - w.createdAt < FLOATING_WORD_LIFETIME + w.delay)
+      );
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [floatingWords.length]);
+
+  const isConnected = flirty.status === "connected";
 
   // Handle external reset (e.g. from curl POST /api/reset)
   useEffect(() => {
     onExternalReset(async () => {
+      musicPlayer.stop();
       if (flirty.status === "connected") {
         await flirty.disconnect();
       }
@@ -33,101 +77,100 @@ export default function App() {
     });
   }, [flirty, onExternalReset]);
 
-  // Mute mic when input mode is text
+  // Mute mic when input mode is text (not applicable in text-only sessions)
   useEffect(() => {
-    if (flirty.status === "connected") {
+    if (isConnected && !flirty.isTextSession) {
       flirty.setMuted(inputMode === "text");
     }
-  }, [inputMode, flirty]);
+  }, [inputMode, isConnected, flirty]);
 
-  // Mute output audio when output mode is text
+  // Mute output audio when output mode is text (not applicable in text-only sessions)
   useEffect(() => {
-    if (flirty.status === "connected") {
+    if (isConnected && !flirty.isTextSession) {
       flirty.setVolume(outputMode === "text" ? 0 : 1);
     }
-  }, [outputMode, flirty]);
+  }, [outputMode, isConnected, flirty]);
 
   const handleSend = useCallback(
     (text: string) => {
-      if (flirty.status === "connected") {
+      if (isConnected) {
         flirty.sendText(text);
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          { id: crypto.randomUUID(), role: "user", content: text, timestamp: Date.now() },
-        ]);
       }
     },
-    [flirty]
+    [flirty, isConnected]
   );
 
-  const handleReset = useCallback(async () => {
-    if (flirty.status === "connected") {
-      await flirty.disconnect();
-    }
-    await resetAll();
-    setMessages([]);
-    refreshHw();
-  }, [flirty, refreshHw]);
+  const handleConnect = useCallback(() => {
+    flirty.connect({ textOnly: inputMode === "text" && outputMode === "text" });
+  }, [flirty, inputMode, outputMode]);
 
-  const showTextInput = inputMode === "text" || flirty.status !== "connected";
-  const showMicButton = inputMode === "voice" || flirty.status !== "connected";
+  const handleDisconnect = useCallback(async () => {
+    musicPlayer.stop();
+    await flirty.disconnect();
+  }, [flirty]);
+
 
   return (
-    <div className="h-screen bg-surface flex flex-col max-w-2xl mx-auto w-full">
-      {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 border-b border-surface-lighter/50">
-        <div className="flex items-center gap-3">
-          <h1 className="text-lg font-light tracking-widest text-accent uppercase">Flirty</h1>
-          {flirty.status === "connected" && (
-            <VoiceVisualizer
-              getVolume={flirty.getOutputVolume}
-              active={flirty.isSpeaking}
-            />
-          )}
-          {flirty.status === "connecting" && (
-            <span className="text-xs text-gray-500 animate-pulse">connecting...</span>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          <ResetButton onReset={handleReset} />
-        </div>
-      </header>
+    <div className={`h-screen bg-surface flex flex-col w-full ${appMode === "config" ? "max-w-2xl mx-auto" : ""}`}>
 
-      {/* Mode toggles + Hardware status */}
-      <ModeToggles
-        inputMode={inputMode}
-        outputMode={outputMode}
-        onInputModeChange={setInputMode}
-        onOutputModeChange={setOutputMode}
-      />
-      <HardwarePanel state={hwState} />
-
-      {/* Chat messages */}
-      <ChatArea messages={messages} />
-
-      {/* Input area */}
-      <div
-        className={`flex items-center gap-3 p-4 border-t border-surface-lighter/50 ${
-          !showTextInput ? "justify-center" : ""
-        }`}
-      >
-        {showTextInput && (
-          <div className="flex-1">
-            <InputBar onSend={handleSend} disabled={false} />
-          </div>
-        )}
-        {showMicButton && (
-          <MicButton
-            isConnected={flirty.status === "connected"}
-            isMuted={flirty.isMuted}
-            isSpeaking={flirty.isSpeaking}
-            onConnect={flirty.connect}
-            onDisconnect={flirty.disconnect}
-            onToggleMute={() => flirty.setMuted(!flirty.isMuted)}
+      {appMode === "config" ? (
+        <>
+          {/* Mode toggles + Hardware status */}
+          <ModeToggles
+            inputMode={inputMode}
+            outputMode={outputMode}
+            onInputModeChange={setInputMode}
+            onOutputModeChange={setOutputMode}
           />
-        )}
-      </div>
+          <HardwarePanel state={hwState} emphasisWords={latestEmphasis} />
+
+          {/* Chat messages */}
+          <ChatArea messages={messages} />
+
+          {/* Input area */}
+          <div
+            className={`flex items-center gap-3 p-4 border-t border-surface-lighter/50 ${
+              inputMode === "voice" && !isConnected ? "justify-center" : ""
+            }`}
+          >
+            {inputMode === "text" ? (
+              <div className="flex items-center gap-3 w-full">
+                <div className="flex-1">
+                  <InputBar onSend={handleSend} disabled={!isConnected} />
+                </div>
+              </div>
+            ) : (
+              <MicButton
+                isConnected={isConnected}
+                isMuted={flirty.isMuted}
+                isSpeaking={flirty.isSpeaking}
+                onConnect={handleConnect}
+                onDisconnect={handleDisconnect}
+                onToggleMute={() => flirty.setMuted(!flirty.isMuted)}
+              />
+            )}
+          </div>
+        </>
+      ) : (
+        <PresentationView
+          isConnected={isConnected}
+          isSpeaking={flirty.isSpeaking}
+          isTextSession={flirty.isTextSession}
+          getOutputVolume={flirty.getOutputVolume}
+        >
+          <FloatingWords words={floatingWords} />
+        </PresentationView>
+      )}
+
+      {/* Footer - always visible */}
+      <Footer
+        isConnected={isConnected}
+        isConnecting={flirty.status === "connecting"}
+        onStart={handleConnect}
+        onStop={handleDisconnect}
+        appMode={appMode}
+        onToggleMode={() => setAppMode((m) => (m === "config" ? "presentation" : "config"))}
+      />
     </div>
   );
 }
